@@ -1,0 +1,340 @@
+# Update CJEU database
+# library(CJEU)
+# con <- dbConnect(MariaDB(), host = "mysql16.unoeuro.com",
+#                  dbname = "courtdata_se_db_cjeu_rolling",
+#                  username = "courtdata_se",
+#                  password = "Bondeska")
+
+# Three functions with terrible names:
+# cjeuSQLupdate
+#   Fully automated, only needs username and password.
+# cjeu_sql
+#   Updates all values for a given case or a list of cases.
+# update_sql
+
+
+# library(CJEU)
+# library(cjeuniv)
+# library(DBI)
+# library(RMariaDB)
+# library(stringr)
+
+# cjeuSQLupdate: Identify cases that were updated locally since they were uploaded to the server.
+cjeuSQLupdate <- function(user, 
+                          password,
+                          silent = TRUE){
+  # library(CJEU)
+  silent <<- silent
+  
+  con <- dbConnect(MariaDB(), 
+                   host = "iuropa.pol.gu.se", 
+                   username = user,
+                   password = password, 
+                   dbname = "cjeu_rolling")
+  
+  cases <- dbGetQuery(con, "select `case`, `date_updated` from cases")
+  dbDisconnect(con)
+  cases$date_updated_info <- as.Date(CJEU::Procedures$date_updated[match(cases$case, CJEU::Procedures$case)])
+  cases$date_updated_server <- as.Date(gsub("\\s.*", "", cases$date_updated))
+  cases$date_updated_server[which(is.na(cases$date_updated_server))] <- "2020-10-01"
+  updated <- cases$case[which(cases$date_updated_info > cases$date_updated_server)]
+  new <- Procedures$case[which(!Procedures$case %in% cases$case)]
+  
+  cjeu_sql(c(new, updated), user, password)
+}
+
+cjeu_sql <- function(id = NA, 
+                     user, 
+                     password,
+                     server="GU", 
+                     from=NA, 
+                     silent=TRUE){
+  
+  if(server != "GU"){
+    con <- dbConnect(MariaDB(), host = "mysql16.unoeuro.com",
+                     dbname = "courtdata_se_db_cjeu_rolling",
+                     username = "courtdata_se",
+                     password = password)
+  } else {
+    # Main database:
+    con <- dbConnect(MariaDB(),
+                          host = "iuropa.pol.gu.se",
+                          username = user, password = password,
+                          dbname = "cjeu_rolling")
+    con2 <- dbConnect(MariaDB(),
+                          host = "iuropa.pol.gu.se",
+                          username = user, password = password,
+                          dbname = "cjeu_rolling_sources")
+    # # Sandbox: 
+    # con <<- dbConnect(MariaDB(), 
+    #                  host = "iuropa.pol.gu.se", 
+    #                  username = user,
+    #                  password = password, 
+    #                  dbname = "cjeu_sandbox")
+    # con2 <<- dbConnect(MariaDB(), 
+    #                   host = "iuropa.pol.gu.se", 
+    #                   username = user,
+    #                   password = password, 
+    #                   dbname = "cjeu_sandbox_sources")
+  }
+  # judges separately! 
+  tables <- c("decisions", "cases", "assignments", "citations", "procedures", "parties", "submissions")
+  ids <-  c("ecli", "case", "ecli", "ecli", "ecli", "case", "ecli")
+  
+  cases_updated_now <- NULL
+  eclis_updated_now <- NULL
+  
+  if(all(is.na(id)) & !is.na(from)){
+    id <- Procedures$case[which(Procedures$case == from):nrow(Procedures)]
+  }
+  
+  for(i in id){
+    message("\n", i)
+    message(Sys.time())
+    if(grepl("ECLI", i)){
+      ecli <- i
+      case <- getCaseIDs(i, "case")
+    }
+    if(grepl("\\d/\\d{2}", i)){
+      case <- i
+      ecli <- getCaseIDs(i)
+    }
+    
+    ecli <- ecli[which(!ecli %in% eclis_updated_now)]
+    case <- case[which(!case %in% cases_updated_now)]
+    
+    ecli <- ecli[grep("ECLI:", ecli)]
+    case <- case[grep("\\d/\\d{2}", case)]
+    
+    if(length(ecli) > 0){
+      for(t in tables[which(ids=="ecli")]){
+        message("\n", t, ": ", paste(ecli, collapse=", ")) 
+        update_obs(IDs=ecli, table = t, silent=silent)
+      }
+    }
+    if(length(case) > 0){
+      for(t in tables[which(ids=="case")]){
+        message(t, ": ", paste(case, collapse=", "))
+        update_obs(IDs=case, table = t, silent=silent)
+      }
+    }
+    eclis_updated_now <- c(eclis_updated_now, ecli)
+    cases_updated_now <- c(eclis_updated_now, case)
+    
+    
+  }
+  
+  dbDisconnect(con)
+  dbDisconnect(con2)
+}
+
+
+update_obs <- function(IDs, table=NA, variables=NA, silent=TRUE){ 
+  
+  if(is.na(table)){
+    if(is.na(table) & grepl("ECLI", IDs[1]) & !grepl("\\.", IDs[1]) & !grepl("[[:upper:]]$", IDs[1])){
+      table <- "decisions"
+    }
+    if(is.na(table) & grepl("ECLI.*\\.", IDs[1])){
+      table <- "assignments"
+    }
+    if(is.na(table) & grepl("\\d/\\d", IDs[1])){
+      table <- "cases"
+    }
+    if(is.na(table) & IDs[1] %in% Judges$judgeID){
+      table <- "judges"
+    }
+  }
+  
+  if(table %in% c("decisions", "citations")){
+    ID_name <- "ECLI_number"
+  }
+  
+  # Better way to find ID_name: First column of data table! Remember exception for eclis in assignments 
+  if(table == "assignments"){
+    ID_name <- "assignment_ID"
+    if(!TRUE %in% grepl(".", IDs, fixed=TRUE)){
+      ID_name <- "ECLI_number"
+    }
+  }
+  if(table == "cases"){
+    ID_name <- "case"
+  }
+  if(table == "procedures"){
+    ID_name <- "procedure_ID"
+  }
+  if(table == "judges"){
+    ID_name <- "judge_ID"
+  }
+  if(table %in% c("parties", "submissions")){
+    ID_name <- "actor_ID"
+  }
+  # We need to think about how this should work when matching tables and ID codes on different levels.
+  # Currently only works with ECLI.
+  n <- 0
+  # ID <- NULL
+  
+  data_columns <- unique(unlist(dbGet(con, paste0("SELECT `COLUMN_NAME` FROM `INFORMATION_SCHEMA`.`COLUMNS` WHERE `TABLE_NAME`='", table, "';"))))
+  
+  # Set variables to all except default ID if missing 
+  if(all(is.na(variables))){
+    variables <- as.character(data_columns[2:length(data_columns)])
+  }
+  if(!"date_updated" %in% variables){
+    variables <- c(variables, "date_updated")
+  }
+  
+  for(v in variables){
+    if(!v %in% unlist(data_columns)){
+      var_type <- "text" # This needs to get smarter - from class(variable) to corresponding sql classes
+      stop("Wants to add column")
+      if(v == "date_updated"){
+        var_type <- "DATETIME"
+      }
+      dbRun(con, paste0("alter table ", table, " add column `", v, "` ", var_type))
+      dbRun(con2, paste0("alter table ", table, " add column `", v, "` ", var_type))
+    }
+  }
+  
+  # When updating assignments by ECLI, it is essential for the script to remove all observations before adding new ones. This is so that 
+  # past wrong observation are removed.
+  drop_obs <- FALSE
+  if(table == "assignments" & ID_name == "ECLI_number"){
+    IDs <- sort(unique(c(updateCJEU::JudgesJudgments$eclijudge[which(updateCJEU::JudgesJudgments$ecli %in% IDs)],
+                         f_assignments$eclijudge[which(f_assignments$ecli %in% IDs)])))
+    eclis <- gsub(":\\d+?$", "", IDs)
+    duplicated_ecli <- duplicated(eclis)
+    drop_obs <- TRUE
+    ID_name <- "assignment_ID"
+  }
+  
+  
+  for(i in as.character(IDs)){
+    
+    msg(paste0("\n____________________ ", i, " ____________________"))
+    
+    variable <- NULL
+    value <- NULL
+    source <- NULL
+    
+    if(drop_obs){ # Delete pre-existing rows from SQL table when needed (in assingments when updating on case level)
+      if(!duplicated_ecli[which(IDs == i)]){
+        
+        dbRun(con, paste0("DELETE FROM ", table, " WHERE `ECLI_number` = ?"), list(eclis[which(IDs == i)]))
+        dbRun(con2, paste0("DELETE FROM ", table, " WHERE `ECLI_number` = ?"), list(eclis[which(IDs == i)]))
+
+        if(exists("ID_list")){
+          ID_list <- ID_list[which(!grepl(paste0(eclis[which(IDs == i)], "."), ID_list, fixed = TRUE))]
+        }
+      }
+    }
+    
+    
+    if(table == "parties"){
+      if(grepl("\\.[[:lower:]]$", i)){
+        case <- gsub("\\.[[:lower:]]$", "", i)
+      } else {
+        case <- i
+      }
+      update_parties(case)
+    }
+    
+    if(table == "citations"){
+      update_citations(i)
+    }
+    if(table == "submissions"){
+      update_submissions(i)
+    }
+    if(table == "procedures"){
+      update_procedures(i)
+    }
+    
+    # # Add missing rows. Run decisions separately to add all three ID codes right off the bat - even though we might want to change them later
+    # # Not sure why I did it like this - I think I'll begin by adding ECLI and then work from there
+    # if(grepl("ECLI", i) & table == "decisions"){
+    #   if(!i %in% ID_list){
+    #     case <- getCaseIDs(i, "case")[1]
+    #     celex <- getCaseIDs(i, "celex")[1]
+    #     
+    #     success <- NA
+    #     success <- try(dbExecute(con, paste0("INSERT INTO ", table, " (`ECLI_number`, `procedure_ID`, `celex`) VALUES (?, ?, ?)"), list(i, case, celex)), silent = TRUE)
+    #     if(class(success) != "integer"){
+    #       message("sleep 20")
+    #       Sys.sleep(20)
+    #       dbExecute(con, paste0("INSERT INTO ", table, " (`ECLI_number`, `procedure_ID`, `celex`) VALUES (?, ?, ?)"), list(i, case, celex))
+    #     }
+    #     success <- NA
+    #     success <- try(dbExecute(con, paste0("INSERT INTO ", paste0(table, "_source"), " (`ECLI_number`, `procedure_ID`, `celex`) VALUES (?, ?, ?)"), list(i, case, celex)), silent=TRUE)
+    #     if(class(success) != "integer"){
+    #       message("sleep 20")
+    #       Sys.sleep(20)
+    #       dbExecute(con, paste0("INSERT INTO ", paste0(table, "_source"), " (`ECLI_number`, `procedure_ID`, `celex`) VALUES (?, ?, ?)"), list(i, case, celex))
+    #     }
+    #     ID_list <- c(ID_list, i)
+    #   }
+    # } 
+    if(!table %in% c("parties", "citations", "submissions", "procedures")){
+      
+      if(!exists("ID_list")){
+        ID_list <- unlist(dbGet(con, paste0("SELECT `", ID_name, "` FROM ", table)))
+      }
+      
+      if(!i %in% ID_list){
+        
+        dbRun(con, paste0("INSERT INTO ", table, " (`", ID_name,"`) VALUES (?)"), list(i))
+        dbRun(con2, paste0("INSERT INTO ", table, " (`", ID_name,"`) VALUES (?)"), list(i))
+        # dbRun(con, paste0("INSERT INTO ", paste0(table, "_source"), " (`", ID_name, "`) VALUES (?)"), list(i))
+        
+        ID_list <- c(ID_list, i)
+      }
+    }
+    variables <- variables[which(variables != ID_name)]
+    if(!table %in% c("parties", "citations", "submissions", "procedures")){
+      for(v in variables){
+        msg(paste0("    ID='", i,"'; variable='", v, "'    "))
+        
+        value_out <- find_value(ID = i, variable = v, frame=table, silent=silent)
+        # øø
+        # if(all(is.na(value_out)) & v != "appeal_of"){stop("NA - controlled :)")}
+        variable <- c(variable, v)
+        value <- c(value, value_out[1])
+        source <- c(source, value_out[2])
+        
+      }
+      
+      if(!"delete this observation" %in% paste(value)){
+        
+        update_sql(ID = i, variable = variable, value = value, table=table, ID_name = ID_name, source = source, new_row = drop_obs)
+        # update_sql(i, variable, value = source, table=table, ID_name = ID_name, source = TRUE)
+        # update_sql(i, variable, value = source, table=paste0(table, "_source"), ID_name = ID_name)
+      } else {
+        # This might not be needed - all deleted by default
+        dbRun(con, paste0("DELETE FROM ", table, " WHERE assignment_ID = ?"), list(i))
+        dbRun(con2, paste0("DELETE FROM ", table, " WHERE assignment_ID = ?"), list(i))
+        message("\n******************** observation deleted ********************")
+        # dbRun(con, paste0("DELETE FROM ", paste0(table, "_source"), " WHERE assignment_ID = ?"), list(i))
+      }
+    }
+    n <- n+1
+    # if(n %% 10 == 0){
+    #   Sys.sleep(1)
+    # }
+  }
+  
+  
+  # if(length(ID) != length(variable) | 
+  #    length(variable) != length(value) |
+  #    length(value) != length(source)){
+  #   stop("Uneven length of lists!")
+  # }
+  
+  
+  # for(n in 1:length(ID)){
+  #   # Normal data set:
+  #   update_sql(ID[n], variable[n], value = value[n], table=table, ID_list=ID_list, data_columns=data_columns)
+  #   # Sources:
+  #   update_sql(ID[n], variable[n], value = source[n], table=paste0(table, "_source"), ID_list=ID_list, data_columns=data_columns)
+  # }
+}
+
+
