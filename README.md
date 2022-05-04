@@ -1,3 +1,2 @@
 # IUROPA-uploader
-# IUROPA-uploader
-# IUROPA-uploader
+Package to compile and upload data to the IUROPA SQL server.
