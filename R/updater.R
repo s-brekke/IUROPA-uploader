@@ -1,5 +1,5 @@
 # cjeuUpload: Identify cases that were updated locally since they were uploaded to the server.
-cjeuUpload <- function(newest.first=FALSE, 
+cjeuUpload <- function(newest.first="random", 
                        silent = TRUE){
   # library(CJEU)
   silent <<- silent
@@ -33,14 +33,17 @@ cjeuUpload <- function(newest.first=FALSE,
   update_judges(judge_ids, con, loc)
   
   cases <- c(new, updated)
-  if(newest.first){
+  if(paste(newest.first) == "TRUE"){
     cases <- rev(cases)
   }
-  cjeu_sql(cases, user, password)
+  if(paste(newest.first) == "random"){
+    cases <- sample(cases, length(cases))
+  }
+  cjeu_sql(cases)
   
   tables <- c("decisions", "cases", "assignments", "citations", "procedures", "parties", "submissions", "judges")
-  ids <-  c("ecli", "case", "ecli", "ecli", "ecli", "case", "ecli", "judge_id")
-  table_sort <-  c("decision_date", "case_date", "decision_date", "decision_date", "decision_date", "case_date", "decision_date", "judge_id")
+  ids <-  c("ecli", "case", "ecli", "ecli", "ecli", "case", "case", "judge_id")
+  table_sort <-  c("decision_date", "case_date", "decision_date", "decision_date", "decision_date", "case_date", "proceeding_date", "judge_id")
   
   # Delete false observations
   ecli_server <- dbGetQuery(con, "SELECT `ecli` FROM decisions")$ecli
@@ -83,7 +86,7 @@ cjeu_sql <- function(id = NA,
                      silent = FALSE){
   
   tables <- c("decisions", "cases", "assignments", "citations", "procedures", "parties", "submissions")
-  ids <-  c("ecli", "case", "ecli", "ecli", "ecli", "case", "ecli")
+  ids <-  c("ecli", "case", "ecli", "ecli", "ecli", "case", "case")
   
   cases_updated_now <- NULL
   eclis_updated_now <- NULL
@@ -188,17 +191,17 @@ update_obs <- function(IDs,
     ID_name <- "ecli"
     IDs <- gsub("^(.*)\\..*$", "\\1", IDs)
   }
-  if(table == "cases"){
+  if(table %in% c("cases", "parties")){
     ID_name <- "case"
   }
-  if(table %in% c("procedures", "submissions")){ # Submissions actually happen on case level, but oh well
+  if(table %in% c("procedures")){
     ID_name <- "ecli"
   }
   if(table == "judges"){
     ID_name <- "judge_id"
   }
-  if(table %in% c("parties")){
-    ID_name <- "case"
+  if(table %in% c("submissions")){
+    ID_name <- "proceeding"
   }
   # We need to think about how this should work when matching tables and ID codes on different levels.
   # Currently only works with ECLI.
@@ -301,7 +304,15 @@ update_obs <- function(IDs,
       } else {
         case <- i
       }
-      update_parties(case, con=con, loc=loc)
+      number_of_rows_affected <- uploadParties(case, con=con, loc=loc)
+    }    
+    if(table == "submissions"){
+      if(grepl("\\.[[:lower:]]$", i)){
+        case <- gsub("\\.[[:lower:]]$", "", i)
+      } else {
+        case <- i
+      }
+      number_of_rows_affected <- uploadSubmissions(case, con=con, loc=loc)
     }
     
     number_of_rows_affected <- 1 # Default to > 0 == T
@@ -309,9 +320,9 @@ update_obs <- function(IDs,
     if(table == "citations"){
       number_of_rows_affected <- update_citations(i)
     }
-    if(table == "submissions"){
-      number_of_rows_affected <- update_submissions(i)
-    }
+    # if(table == "submissions"){
+    #   number_of_rows_affected <- uploadSubmissions(i)
+    # }
     if(table == "procedures"){
       number_of_rows_affected <- update_procedures(i)
     }
