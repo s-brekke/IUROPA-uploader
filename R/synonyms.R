@@ -40,7 +40,8 @@ synonyms <- function(values, variable="NA"){
       "Appeal against penalty; Appeal brought against a sanction; appeal against a penalty",
       "Court of Justice; ECJ; CJ",
       "General Court; GC",
-      "Civil Service Tribunal; FT; CST")
+      "Civil Service Tribunal; FT; CST",
+      "Legal aid; Application for legal aid")
   
   s_list <- str_split(synonym_list, "; ")
   s_names <- unlist(lapply(s_list, function(y) y[1]))

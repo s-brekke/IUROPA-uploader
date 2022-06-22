@@ -398,13 +398,23 @@ find_value <- function(ID, variable, frame="decisions", silent=TRUE, loc=NA){
   
   # when a table, assume first column
   values[grep("list\\(", values)] <- lapply(unfold_list(values[grep("list\\(", values)]), function(y) y[1])
+  values <- unfold_list(values)
   
+  for(v_fix in unique(gsub("\\d+$", "", names(values[grep("\\d$", names(values))])))){
+    values[v_fix] <- paste(values[grep(v_fix, names(values))], collapse="; ")
+  }
+  values <- values[which(!grepl("\\d$", names(values)))]
   
   # Try to fix synonyms
   values <- synonyms(values, variable = variable)
   
+  for(v_fix in unique(gsub("\\d+$", "", names(values[grep("\\d$", names(values))])))){
+    values[v_fix] <- paste(values[grep(v_fix, names(values))], collapse="; ")
+  }
+  values <- values[which(!grepl("\\d$", names(values)))]
+  
   if(length(values) > 0){
-    table <- table(na.omit(values))
+    table <- table(na.omit(unlist(str_split(values, "; "))))
     
     # Simplest possible outcome: Only one observed value
     if(length(table) == 1){
