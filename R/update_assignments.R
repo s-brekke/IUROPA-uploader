@@ -14,10 +14,14 @@ update_assignments <- function(ecli){
   
   # Check that document dates match server to verify that it's the right document
   brekkedate <- dbGetQuery(loc, "SELECT `date_document` FROM Decisions WHERE ecli = ?", list(ecli))$date_document
-  if(paste(fj$document_date[1]) != good_date){
+  
+  if(length(brekkedate) == 0 & nrow(fj) == 0){
+    return(0)
+  }
+  if(paste(fj$document_date[1]) != paste(good_date)){
     fj <- fj[0,]
   }
-  if(brekkedate != good_date){
+  if(paste(brekkedate[1]) != paste(good_date)){
     jj <- jj[0,]
   }
   

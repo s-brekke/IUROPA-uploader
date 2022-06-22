@@ -34,11 +34,16 @@ uploadSubmissions <- function(proceeding, con=con, loc=loc){
   sub$supporting_id[which(is.na(sub$supporting))] <- 0
   sub$date_updated <- as.character(Sys.time())
   
-  Submissions <- sub[,c("proceeding", "actor_role", "actor_role_id", "actor_type", "actor_type_id", "supporting", "supporting_id", "date_updated")]
+  Submissions <- sub[,c("proceeding", "actor", "actor_role", "actor_role_id", "actor_type", "actor_type_id", "supporting", "supporting_id", "date_updated")]
   
   dbRun(con, paste0("DELETE FROM submissions WHERE `proceeding` = ?"), list(proceeding))
   # dbRun(con2, paste0("DELETE FROM submissions WHERE `ecli` = ?"), list(ecli))
+  successful_run <- NA
   if(nrow(Submissions)>0){
+    successful_run <- try(dbAppendTable(con, "submissions", Submissions), silent=TRUE)
+  }
+  if(class(successful_run) == "try-error"){
+    Submissions$actor <- iconv(Submissions$actor, to="ASCII//TRANSLIT", sub="?")
     dbAppendTable(con, "submissions", Submissions)
   }
   return(nrow(Submissions))

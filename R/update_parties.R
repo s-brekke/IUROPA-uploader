@@ -2,7 +2,7 @@
 update_parties <- function(case, con=NA, loc=NA){
   type_s <- NA
   name_s <- NA
-  Parties <- dbGetQuery(loc, "SELECT * FROM Parties WHERE `case` = ?", list(case))
+  Parties <- dbGetQuery(loc, "SELECT * FROM Parties WHERE `proceeding` = ?", list(case))
   
   Parties$role <- as.character(Parties$role)
   Parties$role[which(Parties$role == "other party")] <- "defendant"

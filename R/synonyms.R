@@ -1,6 +1,10 @@
 # synonyms(): Standardize values accross data sets
 synonyms <- function(values, variable="NA"){
   
+  unfold_list(values)
+  
+  values <- unlist(values)
+  
   if(variable %in% c("advocate_general_id", "judge_id", "president_id", "rapporteur_id")){
     values_split <- str_split(values, "; ")
     for(n in 1:length(values_split)){

@@ -10,36 +10,13 @@ cjeuUpload <- function(newest.first="random",
   #                  password = password, 
   #                  dbname = "cjeu_rolling")
   # 
-  cases <- dbGet(con, "select `case`, `date_updated` from cases")
   judge_ids <- dbGet(con, "select `judge_id`, `date_updated` from judges")
   judge_ids <- judge_ids[which(!is.na(judge_ids$date_updated)),]
   judge_ids_loc <- dbGet(loc, "select `judge_id`, `date_updated` from Judges")
   judge_ids_loc$update_server <- judge_ids$date_updated[match(judge_ids_loc$judge_id, judge_ids$judge_id)]
   judge_ids_loc$update_server[which(is.na(judge_ids_loc$update_server))] <- "2000-01-01"
   judge_ids <- judge_ids_loc$judge_id[which(as.Date(judge_ids_loc$update_server) < as.Date(judge_ids_loc$date_updated))]
-  # dbDisconnect(con)
-  
-  # loc <- cjeudb()
-  Procedures <- dbGet(loc, "SELECT `case`, `date_updated` FROM Cases")
-  # dbDisconnect(loc)
-  
-  Procedures$date_updated <- as.Date(gsub("\\s.*", "", Procedures$date_updated))
-  cases$date_updated_info <- as.Date(Procedures$date_updated[match(cases$case, Procedures$case)])
-  cases$date_updated_server <- as.Date(gsub("\\s.*", "", cases$date_updated))
-  cases$date_updated_server[which(is.na(cases$date_updated_server))] <- "2020-10-01"
-  updated <- cases$case[which(cases$date_updated_info > cases$date_updated_server)]
-  new <- Procedures$case[which(!Procedures$case %in% cases$case)]
-  
   update_judges(judge_ids, con, loc)
-  
-  cases <- c(new, updated)
-  if(paste(newest.first) == "TRUE"){
-    cases <- rev(cases)
-  }
-  if(paste(newest.first) == "random"){
-    cases <- sample(cases, length(cases))
-  }
-  cjeu_sql(cases)
   
   tables <- c("decisions", "cases", "assignments", "citations", "procedures", "parties", "submissions", "judges")
   ids <-  c("ecli", "case", "ecli", "ecli", "ecli", "case", "case", "judge_id")
@@ -55,10 +32,10 @@ cjeuUpload <- function(newest.first="random",
   case_remove <- case_server[which(!case_server %in% case_local)]
   
   
-  if(length(ecli_remove) > 200){
+  if(length(ecli_remove) > 700){
     stop("There seems to be a lot of decisions on the server not in the local data base. Look into what in the world is going on.")
   }
-  if(length(case_remove) > 200){
+  if(length(case_remove) > 700){
     stop("There seems to be a lot of cases on the server not in the local data base. Look into what in the world is going on.")
   }
   
@@ -73,12 +50,83 @@ cjeuUpload <- function(newest.first="random",
     }
   }
   
-  for(t in tables){
-    var <- table_sort[which(tables == t)]
-    dbExecute(con, paste0("ALTER TABLE ", t, " ORDER BY `", var, "`;"))
-    dbExecute(con, paste0("SET @row_number = 0; "))
-    dbExecute(con, paste0("UPDATE ", t, " SET `key_id` = (SELECT (@row_number:=@row_number + 1));"))
+  # dbDisconnect(con)
+  for(rounds in 1:10000){
+    cases <- dbGet(con, "select `case`, `date_updated` from cases")
+    
+    # loc <- cjeudb()
+    Procedures <- dbGet(loc, "SELECT `case`, `date_updated` FROM Cases")
+    # dbDisconnect(loc)
+    
+    Procedures$date_updated <- as.Date(gsub("\\s.*", "", Procedures$date_updated))
+    cases$date_updated_info <- as.Date(Procedures$date_updated[match(cases$case, Procedures$case)])
+    cases$date_updated_server <- as.Date(gsub("\\s.*", "", cases$date_updated))
+    cases$date_updated_server[which(is.na(cases$date_updated_server))] <- "2020-10-01"
+    updated <- cases$case[which(cases$date_updated_info > cases$date_updated_server)]
+    new <- Procedures$case[which(!Procedures$case %in% cases$case)]
+    
+    
+    cases <- c(new, updated)
+    if(paste(newest.first) == "TRUE"){
+      cases <- rev(cases)
+    }
+    if(paste(newest.first) == "random"){
+      cases <- sample(cases, length(cases))
+    }
+    
+    break_now <- FALSE
+    if(length(cases) > 150){
+      cases <- cases[1:150]
+    } else {
+      break_now <- TRUE
+    }
+    
+    cjeu_sql(cases)
+    
+    
+    for(t in tables){
+      var <- table_sort[which(tables == t)]
+      dbExecute(con, paste0("ALTER TABLE ", t, " ORDER BY `", var, "`;"))
+      dbExecute(con, paste0("SET @row_number = 0; "))
+      dbExecute(con, paste0("UPDATE ", t, " SET `key_id` = (SELECT (@row_number:=@row_number + 1));"))
+    }
+    
+    if(break_now){
+      break
+    } else {
+      message(150*rounds, " cases updated. Reloading!")
+    }
   }
+  
+  
+  # Delete false observations
+  ecli_server <- dbGetQuery(con, "SELECT `ecli` FROM decisions")$ecli
+  ecli_local <- dbGetQuery(loc, "SELECT `ecli` FROM Decisions")$ecli
+  ecli_remove <- ecli_server[which(!ecli_server %in% ecli_local)]
+  
+  case_server <- dbGetQuery(con, "SELECT `case` FROM cases")$ecli
+  case_local <- dbGetQuery(loc, "SELECT `case` FROM Cases")$ecli
+  case_remove <- case_server[which(!case_server %in% case_local)]
+  
+  
+  if(length(ecli_remove) > 700){
+    stop("There seems to be a lot of decisions on the server not in the local data base. Look into what in the world is going on.")
+  }
+  if(length(case_remove) > 700){
+    stop("There seems to be a lot of cases on the server not in the local data base. Look into what in the world is going on.")
+  }
+  
+  if(length(ecli_remove) > 1){
+    for(t in tables[which(ids == "ecli")]){
+      dbExecute(con, paste0("DELETE FROM ", t, " WHERE `ecli` IN ('", paste(ecli_remove, collapse="', '"), "');"))
+    }
+  }
+  if(length(case_remove) > 1){
+    for(t in tables[which(ids == "case")]){
+      dbExecute(con, paste0("DELETE FROM ", t, " WHERE `case` IN ('", paste(case_remove, collapse="', '"), "');"))
+    }
+  }
+  
 }
 
 cjeu_sql <- function(id = NA, 
@@ -99,13 +147,13 @@ cjeu_sql <- function(id = NA,
     id <- Procedures$case[which(Procedures$case == from):nrow(Procedures)]
   }
   
-    
-    cases_columns <- colnames(dbGet(con, paste0("SELECT * FROM cases WHERE `case` = 'missing'")))
   
-    decisions_columns <- colnames(dbGet(con, paste0("SELECT * FROM decisions WHERE `ecli` = 'missing'")))
-    
-    proceedings_template <- as.data.frame(cjeuniv::proceedings_template)
-    
+  cases_columns <- colnames(dbGet(con, paste0("SELECT * FROM cases WHERE `case` = 'missing'")))
+  
+  decisions_columns <- colnames(dbGet(con, paste0("SELECT * FROM decisions WHERE `ecli` = 'missing'")))
+  
+  proceedings_template <- as.data.frame(cjeuniv::proceedings_template)
+  
   for(i in id){
     message("\n", i, " - ", which(id == i), "/", length(id))
     message(Sys.time())
@@ -117,7 +165,7 @@ cjeu_sql <- function(id = NA,
     if(grepl("\\d/\\d{2}", i)){
       case <- i
       ecli <- unique(c(cjeu("decisions", c("ecli"), i)$ecli,
-        unlist(str_split(proceedings_template$ecli_list[which(proceedings_template$cjeu_proceeding_id == i)], ", "))))
+                       unlist(str_split(proceedings_template$ecli_list[which(proceedings_template$cjeu_proceeding_id == i)], ", "))))
       if(length(ecli) > 0){
         proceeding <- case
       } else {
@@ -246,7 +294,7 @@ update_obs <- function(IDs,
   # When updating assignments by ECLI, it is essential for the script to remove all observations before adding new ones. This is so that 
   # past wrong observation are removed.
   drop_obs <- FALSE
-
+  
   loop <- 0
   for(i in as.character(IDs)){
     
@@ -269,7 +317,7 @@ update_obs <- function(IDs,
         
         dbRun(con, paste0("DELETE FROM ", table, " WHERE `ecli` = ?"), list(eclis[which(IDs == gsub(":\\d+?$", "", i))]))
         dbRun(con2, paste0("DELETE FROM ", table, " WHERE `ecli` = ?"), list(eclis[which(IDs == gsub(":\\d+?$", "", i))]))
-
+        
       }
     }
     vars <- variables
@@ -329,7 +377,7 @@ update_obs <- function(IDs,
     if(table == "assignments"){
       number_of_rows_affected <- update_assignments(i)
     }
-
+    
     
     if(!table %in% c("parties", "citations", "submissions", "procedures","assignments")){ # multiple rows for each observation
       
@@ -364,7 +412,7 @@ update_obs <- function(IDs,
     
     vars <- vars[which(vars != ID_name)]
     
-
+    
     
     if(!table %in% c("parties", "citations", "submissions", "procedures", "assignments")){
       
@@ -381,13 +429,13 @@ update_obs <- function(IDs,
                      "SELECT proceeding_date, proceeding, decision_type, decision_date, court FROM decisions WHERE `ecli` = ?",
                      list(i))
         iuropa_decision_id <- iuropa(i, 
-               con=loc,
-               date_lodged = iuropa_decision_id_info$proceeding_date,
-               case = iuropa_decision_id_info$proceeding,
-               date_document = iuropa_decision_id_info$decision_date,
-               court = iuropa_decision_id_info$court,
-               decision_type = iuropa_decision_id_info$decision_type
-               )
+                                     con=loc,
+                                     date_lodged = iuropa_decision_id_info$proceeding_date,
+                                     case = iuropa_decision_id_info$proceeding,
+                                     date_document = iuropa_decision_id_info$decision_date,
+                                     court = iuropa_decision_id_info$court,
+                                     decision_type = iuropa_decision_id_info$decision_type
+        )
         value[which(variable == "iuropa_decision_id")] <- iuropa_decision_id
         source[which(variable == "iuropa_decision_id")] <- iuropa_decision_id
       }
@@ -413,10 +461,10 @@ update_obs <- function(IDs,
       
       # data.frame(variable=variable, value=value, source=source)
       
-        update_sql(ID = i, variable = variable, value = value, table=table, ID_name = ID_name, source = source, new_row = drop_obs)
-        # update_sql(i, variable, value = source, table=table, ID_name = ID_name, source = TRUE)
-        # update_sql(i, variable, value = source, table=paste0(table, "_source"), ID_name = ID_name)
-        
+      update_sql(ID = i, variable = variable, value = value, table=table, ID_name = ID_name, source = source, new_row = drop_obs)
+      # update_sql(i, variable, value = source, table=table, ID_name = ID_name, source = TRUE)
+      # update_sql(i, variable, value = source, table=paste0(table, "_source"), ID_name = ID_name)
+      
     }
     
     if(table=="cases"){ # List decisions
@@ -424,7 +472,7 @@ update_obs <- function(IDs,
     }
     
     
-
+    
     if(!na(variables_cases) & !na(case) & number_of_rows_affected > 0){
       variables_cases <- variables_cases[which(variables_cases != ID_name)]
       
@@ -463,20 +511,20 @@ update_obs <- function(IDs,
       # null <- lapply(variables_decisions, function(v)
       # for(v in variables_decisions){
       dbExecute(con, 
-            paste0("UPDATE ", table, " SET ", 
-               paste0("`", variables_decisions,"` = (SELECT decisions.`", variables_decisions, "` FROM decisions WHERE decisions.`ecli` = '", ecli, "')", collapse=", "),
-               " WHERE ", table,".`", ID_name, "` = ?;"),
-            list(i))
+                paste0("UPDATE ", table, " SET ", 
+                       paste0("`", variables_decisions,"` = (SELECT decisions.`", variables_decisions, "` FROM decisions WHERE decisions.`ecli` = '", ecli, "')", collapse=", "),
+                       " WHERE ", table,".`", ID_name, "` = ?;"),
+                list(i))
       dbExecute(con2, 
                 paste0("UPDATE ", table, " SET ", 
                        paste0("`", variables_decisions,"` = (SELECT decisions.`", variables_decisions, "` FROM decisions WHERE decisions.`ecli` = '", ecli, "')", collapse=", "),
                        " WHERE ", table,".`", ID_name, "` = ?;"),
                 list(i))
-        
-        # dbRun(con, 
-        #       paste0("UPDATE ", table, " SET `", v, "` = (SELECT decisions.`", v, "` FROM decisions WHERE decisions.`ecli` = ?) WHERE ", table,".`", ID_name, "` = ?;"),
-        #       list(ecli, i)
-        # )
+      
+      # dbRun(con, 
+      #       paste0("UPDATE ", table, " SET `", v, "` = (SELECT decisions.`", v, "` FROM decisions WHERE decisions.`ecli` = ?) WHERE ", table,".`", ID_name, "` = ?;"),
+      #       list(ecli, i)
+      # )
       # }
       # )
       

@@ -396,6 +396,10 @@ find_value <- function(ID, variable, frame="decisions", silent=TRUE, loc=NA){
     return(NA)
   }
   
+  # when a table, assume first column
+  values[grep("list\\(", values)] <- lapply(unfold_list(values[grep("list\\(", values)]), function(y) y[1])
+  
+  
   # Try to fix synonyms
   values <- synonyms(values, variable = variable)
   
@@ -665,6 +669,13 @@ find_value <- function(ID, variable, frame="decisions", silent=TRUE, loc=NA){
   if(post_process != "none"){
     variable <- post_process
   }
+  
+  if(grepl("c\\(|list\\(", out_value)){
+    out_value <- paste(unlist(unfold_list(gsub(";", ",", out_value))), collapse="; ")
+  }
+  
+  if(out_value %in% c("c", "list"))
+  
   msg(paste0(ID, ": ", variable, " identified as ", out_value, " on basis of: ", paste(out_source, collapse=", ")))
   # Fix broken symbols (Š and Č are known trouble makers)
   if(length(out_value) == 1){
