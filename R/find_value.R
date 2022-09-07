@@ -398,7 +398,10 @@ find_value <- function(ID, variable, frame="decisions", silent=TRUE, loc=NA){
   
   # when a table, assume first column
   values[grep("list\\(", values)] <- lapply(unfold_list(values[grep("list\\(", values)]), function(y) y[1])
+  
   values <- unfold_list(values)
+  values <- lapply(values, function(y) paste(y, collapse = "; "))
+  
   
   for(v_fix in unique(gsub("\\d+$", "", names(values[grep("\\d$", names(values))])))){
     values[v_fix] <- paste(values[grep(v_fix, names(values))], collapse="; ")
@@ -414,12 +417,13 @@ find_value <- function(ID, variable, frame="decisions", silent=TRUE, loc=NA){
   values <- values[which(!grepl("\\d$", names(values)))]
   
   if(length(values) > 0){
-    table <- table(na.omit(unlist(str_split(values, "; "))))
+    table <- table(values)
+    # table <- table(na.omit(unlist(str_split(values, "; "))))
     
     # Simplest possible outcome: Only one observed value
     if(length(table) == 1){
       out_source <- names(values)
-      out_value <- classify_value(names(table), var_type)
+      out_value <- as.character(names(table), var_type)
     }
     
     if(length(which(names(table) != "")) == 1 & is.na(out_value)){
@@ -467,11 +471,7 @@ find_value <- function(ID, variable, frame="decisions", silent=TRUE, loc=NA){
     if(length(table(tolower(values))) == 1 & is.na(out_value)){
       msg(paste("Value identified on basis of: ", paste(names(values), collapse=", ")))
       out_source <- names(values)
-      if(!is.na(d_value)){
-        out_value <- classify_value(d_value)
-      } else {
-        out_value <- classify_value(sort(table(values), decreasing = T)[1])
-      }
+      out_value <- as.character(sort(table(values), decreasing = T)[1])
     }
     
     
