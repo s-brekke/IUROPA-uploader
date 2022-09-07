@@ -91,6 +91,8 @@ cjeuUpload <- function(newest.first="random",
       dbExecute(con, paste0("UPDATE ", t, " SET `key_id` = (SELECT (@row_number:=@row_number + 1));"))
     }
     
+    dbExecute(con, "UPDATE decisions SET chamber_size = NULL WHERE chamber_size = '0'")
+    
     if(break_now){
       break
     } else {
@@ -107,6 +109,8 @@ cjeuUpload <- function(newest.first="random",
   case_server <- dbGetQuery(con, "SELECT `case` FROM cases")$ecli
   case_local <- dbGetQuery(loc, "SELECT `case` FROM Cases")$ecli
   case_remove <- case_server[which(!case_server %in% case_local)]
+  
+  # Chamber size zero should not occur
   
   
   if(length(ecli_remove) > 700){
