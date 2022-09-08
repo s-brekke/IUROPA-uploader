@@ -5,9 +5,17 @@ uploadSubmissions <- function(proceeding, con=con, loc=loc){
   }
   sub <- sub[which(sub$role %in% c("Intervening party", "Observation", "Oral observation")),]
   
-  # Remove the following ####
-  # I observed in ECLI:EU:C:1960:18 that the same interveners could be listed multiple times. Fix in local.
-  sub <- sub[which(!duplicated(sub[,c("role", "supporting", "name")])),]
+  dates <- cjeu("decisions", c("ecli", "date_document"), unique(sub$ecli))
+  
+  sub$date <- dates$date_document[match(sub$ecli, dates$ecli)]
+  
+  # Only most recent document: 
+  sub <- sub[which(sub$date == max(dates$date_document, na.rm = TRUE)),]
+  
+  # # I used to gather from all documents; now only the most recent. Neither are ideal. 
+  # # Remove the following #
+  # # I observed in ECLI:EU:C:1960:18 that the same interveners could be listed multiple times. Fix in local.
+  # sub <- sub[which(!duplicated(sub[,c("role", "supporting", "name")])),]
   # Remove bad observations. Do locally instead.
   rm <- paste("judgment|the costs|the guarantor|having regard|after hearing|principal admin|^the court$", 
               "council regulation|a declaration|^and by|thes?e? questions|the dispute|dismissed|hearing date",
