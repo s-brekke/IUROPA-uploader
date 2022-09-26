@@ -1,4 +1,6 @@
 uploadSubmissions <- function(proceeding, con=con, loc=loc){
+  dbRun(con, paste0("DELETE FROM submissions WHERE `proceeding` = ?"), list(proceeding))
+  
   sub <- dbGetQuery(loc, "SELECT * FROM Submissions WHERE `proceeding` = ?", list(proceeding))
   if(nrow(sub) == 0){
     return(0)
@@ -20,7 +22,8 @@ uploadSubmissions <- function(proceeding, con=con, loc=loc){
   rm <- paste("judgment|the costs|the guarantor|having regard|after hearing|principal admin|^the court$", 
               "council regulation|a declaration|^and by|thes?e? questions|the dispute|dismissed|hearing date",
               "of that directive", "paragraph \\d", "the concept", "the product", "the answer", " marketed", " obtained", "therefore", "the.*question",
-              "the.*principle", "the condition", " considers", "composed of", "advocate general", "registrar", "court cannot", "Proceedings", "to the report",
+              "the.*principle", "the condition", " considers", "composed of", "advocate general", "registrar", 
+              "court cannot", "Proceedings", "to the report", "the \\w* Chamber of",
               sep="|")
   
   sub <- sub[which(!grepl(rm, sub$name, ignore.case = TRUE)),]
@@ -42,9 +45,11 @@ uploadSubmissions <- function(proceeding, con=con, loc=loc){
   sub$supporting_id[which(is.na(sub$supporting))] <- 0
   sub$date_updated <- as.character(Sys.time())
   
+  sub$actor[which(paste(sub$actor) == "NA")] <-sub$name[which(paste(sub$actor) == "NA")]
+  
   Submissions <- sub[,c("proceeding", "actor", "actor_role", "actor_role_id", "actor_type", "actor_type_id", "supporting", "supporting_id", "date_updated")]
   
-  dbRun(con, paste0("DELETE FROM submissions WHERE `proceeding` = ?"), list(proceeding))
+  
   # dbRun(con2, paste0("DELETE FROM submissions WHERE `ecli` = ?"), list(ecli))
   successful_run <- NA
   if(nrow(Submissions)>0){
