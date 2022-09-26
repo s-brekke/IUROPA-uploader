@@ -6,7 +6,7 @@ uploadParties <- function(proceeding, con=con, loc=cjeudb()){
   }
   
   parties_all$eclicounter <- paste0(gsub("^.*:(\\d{4}):.*$", "\\1", parties_all$ecli),
-  str_pad(gsub("^.*:", "", parties_all$ecli), 5, pad=0, side="left"))
+                                    str_pad(gsub("^.*:", "", parties_all$ecli), 5, pad=0, side="left"))
   parties_all$eclicounter[grep("NA", parties_all$eclicounter)] <- 1
   parties_all$eclicounter <- as.numeric(parties_all$eclicounter)
   
@@ -26,6 +26,10 @@ uploadParties <- function(proceeding, con=con, loc=cjeudb()){
   
   if(all(is.na(parties_all$case))){
     parties_all$case <- parties_all$proceeding
+  }
+  
+  if(length(na.omit(unique(parties_all$case))) == 1){
+    parties_all$case <- unique(na.omit(parties_all$case))
   }
   
   for(actor in unique(parties_all$role[which(parties_all$role %in% c("applicant", "appellant", "defendant", "other party"))])){
