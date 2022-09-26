@@ -119,7 +119,7 @@ update_citations <- function(ecli){
   
   # article_ref
   article_refs <- unlist(lapply(celex_ref, function(y)
-    paste(unique(unlist(refs$article[which(refs$celex_ref == y)])), collapse="; ")))
+    paste(unique(na.omit(unlist(refs$article[which(refs$celex_ref == y)]))), collapse="; ")))
   article_refs[which(article_refs == "")] <- NA
   
   article_refs_source <- rep(NA, length(celex_ref))
