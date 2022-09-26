@@ -10,7 +10,9 @@ update_assignments <- function(ecli){
   fj <- f_assignments[which(f_assignments$ecli == ecli),]
   
   # Judge IDs have been updated since the last time fjelstul data was
+  if(nrow(fj) > 0){
   fj$judge_ID <- getJudgeID(fj$judge, date=fj$document_date[1])
+  } 
   
   # Check that document dates match server to verify that it's the right document
   brekkedate <- dbGetQuery(loc, "SELECT `date_document` FROM Decisions WHERE ecli = ?", list(ecli))$date_document
