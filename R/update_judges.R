@@ -2,7 +2,7 @@
 # frame <- dbGetQuery(con, "SELECT * FROM judges")
 
 update_judges <- function(judge_id, con, loc){
-  
+  failed <- NULL
   judges <- cjeu("Judges", c("judge_id", "firstname", "surname"))
     
   judges$label <- judges$surname
@@ -64,23 +64,20 @@ update_judges <- function(judge_id, con, loc){
     }
     non_consecutive <-as.numeric(non_consecutive > 1)
     
-    judge <- data.frame(judge_id = j,
+    judge <- data.frame(iuropa_judge_id = j,
                full_name = simplify_encoding(data$name),
                first_name = simplify_encoding(data$firstname),
                last_name = simplify_encoding(data$surname),
                last_name_latin = iconv(data$surname, to="ASCII//TRANSLIT"),
                last_name_label = simplify_encoding(judges$label[which(judges$judge_id == j)]),
                last_name_latin_label = iconv(judges$label[which(judges$judge_id == j)], to="ASCII//TRANSLIT"),
-               member_state_id = ms_id[, data$nominating_ms],
                member_state = data$nominating_ms,
-               member_state_code = ms_code[, data$nominating_ms],
                birth_year = format(data$date_birth, "%Y"),
                female = data$female,
                judge_court_of_justice = as.numeric(grepl("CJ_judge", data$positions)),
                judge_general_court = as.numeric(grepl("GC_judge", data$positions)),
                judge_civil_service_tribunal = as.numeric(grepl("CST_judge", data$positions)),
                advocate_general = as.numeric(grepl("CJ_AG", data$positions)),
-               current_status = paste(sort(current_status), collapse="; "),
                current_member = as.numeric(TRUE %in% grepl("Current", current_status)),
                count_positions = length(current_status),
                nonconsecutive_positions = non_consecutive,
@@ -91,11 +88,11 @@ update_judges <- function(judge_id, con, loc){
                start_date_general_court = data$date_entry_gc,
                end_date_general_court = data$date_exit_gc,
                start_date_civil_service_tribunal = data$date_entry_cst,
-               end_date_service_tribunal = data$date_exit_cst,
+               end_date_civil_service_tribunal = data$date_exit_cst,
                start_date_advocate_general = data$date_entry_ag,
                end_date_advocate_general = data$date_entry_cj,
                background_judge = data$judge,
-               background_lawyer = data$lawyer,
+               background_lawyer = as.numeric(data$lawyer),
                background_politics = data$politics,
                background_civil_servant = data$civil_service,
                background_academia = academic,
@@ -113,16 +110,32 @@ update_judges <- function(judge_id, con, loc){
     # last_name_label <- judge$last_name_label
     # judge$last_name_label <- iconv(judge$last_name_label, to="ASCII//TRANSLIT", sub="?")
 
-    dbRun(con, paste0("DELETE FROM judges WHERE `judge_id` = ?"), list(j))
-    # If you run into problems here, update the "simplify_encoding" script below to weed out whatever character is causing trouble.
-    dbAppendTable(con, "judges", judge)
+    if(is.na(judge$background_judge) | is.na(judge$background_academia)){
+      message(judge$iuropa_judge_id, ": Incomplete info - please update judge! ")
+      failed <- c(failed, judge$iuropa_judge_id)
+    } else {
+      
+      columns <- colnames(judge)
+      values <- rep(as.character((unlist(lapply(as.list(judge), as.character)))), 2)
+      dbExecute(con,
+                paste0("INSERT INTO judges(`", 
+                       paste(columns, collapse="`, `"),
+                       "`) VALUES (", 
+                       paste(rep("?", length(columns)), collapse=", "),") ",
+                       "ON DUPLICATE KEY UPDATE ", 
+                       paste0("`", columns, "` = ?", collapse=", ")),
+                as.list(values)
+      )
+    
+    }
   }
+  return(failed)
 }
 
 
 simplify_encoding <- function(text){ # Our MariaDB server is more picky on encoding than my SQLite server
-  not_supported <- c("ř", "Ř", "ń", "Ł", "ł", "Ć", "ē", "ć")
-  counterparts  <- c("r", "R", "n", "L", "l", "C", "e", "c")
+  not_supported <- c("ř", "Ř", "ń", "Ł", "ł", "Ć", "ē", "ć", "č", "ū", "ă", "ș")
+  counterparts  <- c("r", "R", "n", "L", "l", "C", "e", "c", "c", "u", "a", "s")
   for(y in which(unlist(lapply(not_supported, function(y) grepl(y, text))))){
     text <- gsub(not_supported[y], counterparts[y], text)
   }

@@ -1,6 +1,6 @@
 exportPattern("^[[:alpha:]]+")
 importFrom("CJEU", "getJudgeID", "getDate")
-importFrom("DBI", "dbConnect", "dbGetQuery", "dbExecute", "dbIsValid")
+importFrom("DBI", "dbConnect", "dbGetQuery", "dbExecute", "dbIsValid", "dbAppendTable")
 importFrom("stringr", "str_split", "str_pad")
 importFrom("RMariaDB", "MariaDB")
 importFrom("RSQLite", "SQLite")

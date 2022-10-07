@@ -179,10 +179,10 @@ update_sql <- function(ID, variable, value, table, ID_name, source=NA, new_row =
         )
   
   # Update source table (con2)
-  dbRun(con2,
-        command = paste0("UPDATE ", table," SET ", paste0("`", variable,"` = ?", collapse=", "), " WHERE `", ID_name, "` = ?"),
-        list = as.list(c(as.character(source), ID))
-  )
+  # dbRun(con2,
+  #       command = paste0("UPDATE ", table," SET ", paste0("`", variable,"` = ?", collapse=", "), " WHERE `", ID_name, "` = ?"),
+  #       list = as.list(c(as.character(source), ID))
+  # )
   
 }
 

@@ -1,6 +1,9 @@
 uploadParties <- function(proceeding, con=con, loc=cjeudb()){
   
   parties_all <- dbGetQuery(loc, "SELECT * FROM Parties WHERE `proceeding` = ?", list(proceeding))
+  
+  parties_all$role[which(parties_all$role == "other party")] <- "defendant"
+  
   if(nrow(parties_all) == 0){
     return(NA)
   }
@@ -13,8 +16,8 @@ uploadParties <- function(proceeding, con=con, loc=cjeudb()){
   if(nrow(parties_all) == 0){
     return(NA)
   }
-  dbRun(con, paste0("DELETE FROM parties WHERE `proceeding` = ?"), list(proceeding))
-  # dbRun(con2, paste0("DELETE FROM parties WHERE `proceeding` = ?"), list(proceeding))
+  dbRun(con, paste0("DELETE FROM parties WHERE `cjeu_proceeding_id` = ?"), list(proceeding))
+  
   
   parties_all$actor[which(paste(parties_all$actor) == "NA")] <- parties_all$name[which(paste(parties_all$actor) == "NA")]
   
@@ -62,7 +65,9 @@ uploadParties <- function(proceeding, con=con, loc=cjeudb()){
       }
     }
   }
-  
+  if(na(parties)){
+    return()
+  }
   for(repeated_actor in names(which(table(paste(parties$actor, parties$actor_role, sep="¼")) > 1))){
     ra <- gsub("¼.*$", "", repeated_actor)
     rr <- gsub("^.*¼", "", repeated_actor)
@@ -83,9 +88,64 @@ uploadParties <- function(proceeding, con=con, loc=cjeudb()){
   
   parties$case <- iconv(parties$case, to="ASCII//TRANSLIT", sub="?")
   out <- NA
-  try(out <- dbAppendTable(con, "parties", parties), silent = TRUE)
+  
+  if(max(nchar(parties$actor)) > 200){
+    return("Bad parties")
+  }
+  columns <- c(
+    "cjeu_proceeding_id",
+    "cjeu_case_id",
+    "actor_role",
+    "actor_name",
+    "actor_type")
+  
+  parties$actor_type[which(tolower(paste(parties$actor_type)) == "na")] <- rep(NA, length(which(tolower(paste(parties$actor_type)) == "na")))
+  
+  if(TRUE %in% is.na(parties$actor_type)){
+    parties$actor_type[which(is.na(parties$actor_type))] <- getActorType(parties$actor[which(is.na(parties$actor_type))])$type
+  }
+  
+  parties$actor_type[grep("employee|individual", parties$actor_type, ignore.case = TRUE)] <- "natural person"
+  parties$actor_type[grep("NGO", parties$actor_type, ignore.case = TRUE)] <- "organization"
+  
+  
+  parties$actor_type <- gsub("eu ", "EU ", tolower(parties$actor_type))
+  
+    # 'EU institution',
+    # 'employee of EU institution',
+    # 
+    # 'state',
+    # 
+    # 'region',
+    # 
+    # 'state institution',
+    # 
+    # 'employee of state institution',
+    # 
+    # 'company',
+    # 
+    # 'individual'
+  
+  colnames(parties)[1] <- "cjeu_case_id"
+  colnames(parties)[2] <- "cjeu_proceeding_id"
+  colnames(parties)[4] <- "actor_name"
+  
+  parties$date_updated <- NULL
+
+  # Add missing actor types last minute
+  parties$actor_type[which(!parties$actor_type %in% c('EU institution',
+                                                          'state',
+                                                          'region',
+                                                          'state institution',
+                                                          'company',
+                                                          'natural person'))] <- NA
+  
+  out <- NA
+  try(out <- dbAppendTable(con, "parties", parties), silent=TRUE)
+  
+  
   if(is.na(out)){
-    parties$actor <- iconv(parties$actor, to="ASCII//TRANSLIT", sub="?")
+    parties$actor_name <- iconv(parties$actor_name, to="ASCII//TRANSLIT", sub="?")
     out <- dbAppendTable(con, "parties", parties)
   }
   return(nrow(parties))

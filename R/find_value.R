@@ -12,6 +12,10 @@ find_value <- function(ID, variable, frame="decisions", silent=TRUE, loc=NA){
   }
   
   if(grepl("\\d/\\d{2}", ID)){
+    if(variable == "cjeu_case_id"){
+      return(rep(ID,2))
+    }
+    
     if(variable == "case_year"){
       year <- as.numeric(gsub("^.*\\d/(\\d{2}).*$", "\\1", ID))
       return(rep(ifelse(year > 50, year + 1900, year+2000), 2))
@@ -19,6 +23,14 @@ find_value <- function(ID, variable, frame="decisions", silent=TRUE, loc=NA){
     if(variable == "case_number"){
       return(rep(as.numeric(gsub("^.*?(\\d+)/\\d{2}.*$", "\\1", ID)),2))
     }
+    
+    if(variable=="removed"){
+      return(rep(as.numeric(TRUE %in% cjeu("curia", "Removed_from_register", ID)$Removed_from_register), 2))
+    }
+    if(variable=="transfered"){
+      return(c(0, 0))
+    }
+    
     if(variable %in% c("proceeding", "joined_cases", "iuropa_proceeding_id", "proceeding_number", "proceeding_year")){
       joined <- unlist(unfold_list(dbGetQuery(loc, "SELECT `joined_cases` FROM Cases WHERE `case` = ?", list(ID))$joined_cases))
       
